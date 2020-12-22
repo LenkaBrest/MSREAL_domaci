@@ -9,13 +9,19 @@
 #include <linux/uaccess.h>
 #include <linux/errno.h>
 #include <linux/device.h>
+#include <linux/semaphore.h>
 #define BUFF_SIZE 200
 MODULE_LICENSE("Dual BSD/GPL");
+DECLARE_WAIT_QUEUE_HEAD(readQ);
+DECLARE_WAIT_QUEUE_HEAD(writeQ);
 
 dev_t my_dev_id;
 static struct class *my_class;
 static struct device *my_device;
 static struct cdev *my_cdev;
+
+struct semaphore sem;
+struct fasync_struct *async_queue;
 
 char stred[100];
 int pos = 0;
@@ -59,6 +65,9 @@ ssize_t stred_read(struct file *pfile, char __user *buffer, size_t length, loff_
 		endRead = 0;
 		return 0;
 	}
+	
+	if(wait_event_interruptible(readQ, (strlen(stred)>0)))
+		return -ERESTARTSYS;
 
 	//if(pos > 0)
 	//{
@@ -74,6 +83,7 @@ ssize_t stred_read(struct file *pfile, char __user *buffer, size_t length, loff_
 		{
 			printk(KERN_INFO "Succesfully read\n");
 			endRead = 1;
+			wake_up_interruptible(&readQ);
 		}
 	//else
 	//{
@@ -98,6 +108,10 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 		return -EFAULT;
 	buff[length-1] = '\0';
 	
+	if(wait_event_interruptible(writeQ, (strlen(stred)<100)))
+		return -ERESTARTSYS;
+
+		
 	
 	if(length<107)
         {
@@ -111,13 +125,13 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 			pos = j-1;
 			printk(KERN_WARNING "Succesfully wrote string");
 		}
-		if(strcmp(buff,"clear")==0)
+		else if(strcmp(buff,"clear")==0)
 		{
 			printk(KERN_WARNING "Deleting string");
 			for(j=0; j<100; j++)
 				stred[j]=0;
 		}
-		if(strcmp(buff, "shrink")==0)
+		else if(strcmp(buff, "shrink")==0)
 		{
 			j=0;
 			printk(KERN_WARNING "Deleting spaces");
@@ -135,7 +149,7 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 				j++;
 			}
 		}
-		if(strncmp(buff, "append=", 7)==0)
+		else if(strncmp(buff, "append=", 7)==0)
 		{
 			j=0;
 			printk(KERN_WARNING "Adding string");
@@ -151,18 +165,17 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 			}
 			pos+=j;
 		}
-		if(strncmp(buff,"truncate=", 9)==0)
+		else if(strncmp(buff,"truncate=", 9)==0)
 		{
 			ret = sscanf(buff,"%d",&value);
 			if(ret==1)//one parameter parsed in sscanf
 			{
-				if(value>100)
+				if(value>100 || (pos-value)<0)
 					printk(KERN_INFO "Can't delete soo many caracters");
 				else
 				{
 					printk(KERN_INFO "Deleting %d end caracters", value); 
-					for(j=0; j<value; j++)
-					stred[pos-j]=0;
+					stred[pos-value]='\n';	
 				}
 				pos = pos-value;
 
@@ -174,7 +187,7 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 			}
 
 		}
-		if(strncmp(buff,"remove=", 7)==0)
+		else if(strncmp(buff,"remove=", 7)==0)
 		{
 			memmove(buff, buff+7, length-6);
 			poklapanje = strstr(stred,buff);
@@ -186,13 +199,15 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 			}
 			pos = strlen(stred)+1;
 		}
+		else
+			printk(KERN_WARNING "Wrong command format\n");
 
 
 	}
 	else
 		printk(KERN_WARNING "Too long string. The string should not have more than 100 caracters");
 
-
+	wake_up_interruptible(&readQ);
 	return length;
 }
 
