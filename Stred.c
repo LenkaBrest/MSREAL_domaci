@@ -44,13 +44,13 @@ struct file_operations my_fops =
 
 int stred_open(struct inode *pinode, struct file *pfile) 
 {
-		printk(KERN_INFO "Succesfully opened lifo\n");
+		printk(KERN_INFO "Succesfully opened stred\n");
 		return 0;
 }
 
 int stred_close(struct inode *pinode, struct file *pfile) 
 {
-		printk(KERN_INFO "Succesfully closed lifo\n");
+		printk(KERN_INFO "Succesfully closed stred\n");
 		return 0;
 }
 
@@ -59,25 +59,25 @@ ssize_t stred_read(struct file *pfile, char __user *buffer, size_t length, loff_
 {
 	int ret;
 	char buff[BUFF_SIZE];
-	long int len=0;
+//	long int len=0;
 	if (endRead){
 		pos=0;
 		endRead = 0;
 		return 0;
 	}
-	printk(KERN_INFO "Pre reda");
+	//printk(KERN_INFO "Pre reda\n");
 	if(wait_event_interruptible(readQ, (strlen(stred)>0)))
 	{
-		printk(KERN_INFO "U redu sam");
+		//printk(KERN_INFO "U redu sam\n");
 		return -ERESTARTSYS;
 	}
 	strcpy(buff, stred);
-	printk(KERN_INFO "Kopirao sam");
+	//printk(KERN_INFO "Kopirao sam\n");
 	ret = copy_to_user(buffer, stred, strlen(stred));
-	printk(KERN_INFO "IZBACIO SAM");
+	//printk(KERN_INFO "IZBACIO SAM\n");
 	if(ret)
 	{
-		printk(KERN_WARNING "Nisam izbacio");
+		//printk(KERN_WARNING "Nisam izbacio\n");
 		return -EFAULT;
 	}
 	printk(KERN_WARNING "Succesfully read\n");
@@ -103,17 +103,16 @@ ssize_t stred_read(struct file *pfile, char __user *buffer, size_t length, loff_
 	//		printk(KERN_WARNING "Lifo is empty\n"); 
 	//}
 
-	return len;
+	return strlen(stred);
 }
 
 ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length, loff_t *offset) 
 {
 	char buff[BUFF_SIZE];
+	char *pok;
 	int value;
 	int ret;
 	int j=0;
-	int poc=0;
-	int kraj=0;
 	char *poklapanje;
 
 	ret = copy_from_user(buff, buffer, length);
@@ -130,55 +129,51 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
         {
 		if(strncmp(buff, "string=", 7)==0)
 		{
-			strcpy(stred, buff+7);
-			printk(KERN_WARNING "Succesfully wrote string");
+			strcpy(stred, (buff+7));
+			printk(KERN_WARNING "Succesfully wrote string\n");
 		}
 		else if(strcmp(buff,"clear")==0)
 		{
-			printk(KERN_WARNING "Deleting string");
+			printk(KERN_WARNING "Deleting string\n");
 			for(j=0; j<100; j++)
 				stred[j]=0;
 		}
 		else if(strcmp(buff, "shrink")==0)
 		{
+			pok = strim(stred);
+			printk(KERN_WARNING "Deleting spaces\n");
 			j=0;
-			printk(KERN_WARNING "Deleting spaces");
-			while(stred[j]==' ')
-				j++;
-			poc = j;
-			j=1;
-			while(stred[strlen(stred)-j]==' ')
-				j++;
-			kraj =pos-j;
-			j=0;
-			while(j<(kraj+1-poc))
+			while(stred[j] != '\0')
 			{
-				stred[j]=stred[poc+j];
+				stred[j]=(*(pok+j));
 				j++;
 			}
+			stred[j]='\0';
 		}
 		else if(strncmp(buff, "append=", 7)==0)
 		{
 			j=0;
-			printk(KERN_WARNING "Adding string");
-			while(buff[j]!='\0')
-			{
+			printk(KERN_WARNING "Adding string\n");
+			//while(buff[j]!='\0')
+			//{
 				if((strlen(stred)+strlen(buff+7))>100)
-				printk(KERN_WARNING "Too long string");
+				printk(KERN_WARNING "Too long string\n");
 				else
 				{
 					strcat(stred, buff+7);
-					printk(KERN_INFO "Successfully concatenated");
+					printk(KERN_INFO "Successfully concatenated\n");
 				}
-			}
+			//}
 		}
 		else if(strncmp(buff,"truncate=", 9)==0)
 		{
-			ret = sscanf(buff,"%d",&value);
+			printk(KERN_WARNING "%s", buff);
+			ret = sscanf(buff,"=%d",&value);
+			printk(KERN_WARNING "%d %d", ret, value);
 			if(ret==1)//one parameter parsed in sscanf
 			{
 				if(value>100 || (strlen(stred)-value)<0)
-					printk(KERN_INFO "Can't delete soo many characters");
+					printk(KERN_INFO "Can't delete soo many characters\n");
 				else
 				{
 					printk(KERN_INFO "Deleting %d end characters", value); 
@@ -201,7 +196,7 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 			{
 				memmove(stred,poklapanje, strlen(poklapanje)+1);
 				poklapanje = strstr(stred, buff);
-				printk(KERN_INFO "Removed %d characters", value);
+				printk(KERN_INFO "Removed %d characters\n", value);
 
 			}
 		}
