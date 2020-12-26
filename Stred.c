@@ -168,7 +168,7 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 		else if(strncmp(buff,"truncate=", 9)==0)
 		{
 			printk(KERN_WARNING "%s", buff);
-			ret = sscanf(buff,"=%d",&value);
+			ret = sscanf(buff+9,"%d",&value);
 			printk(KERN_WARNING "%d %d", ret, value);
 			if(ret==1)//one parameter parsed in sscanf
 			{
@@ -177,7 +177,7 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 				else
 				{
 					printk(KERN_INFO "Deleting %d end characters", value); 
-					stred[strlen(stred)-value]='\n';	
+					stred[strlen(stred)-value]='\0';	
 				}
 
 			}
@@ -191,14 +191,12 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 		else if(strncmp(buff,"remove=", 7)==0)
 		{
 			memmove(buff, buff+7, strlen(buff)-6);
-			poklapanje = strstr(stred,buff);
-			while(poklapanje!=NULL)
+			while((poklapanje=strstr(stred, buff))!='\0')
 			{
-				memmove(stred,poklapanje, strlen(poklapanje)+1);
-				poklapanje = strstr(stred, buff);
-				printk(KERN_INFO "Removed %d characters\n", value);
-
+				*poklapanje='\0';
+				strcat(stred, poklapanje+strlen(buff));
 			}
+			printk(KERN_INFO "Successfully removed substring");
 		}
 		else
 			printk(KERN_WARNING "Wrong command format\n");
