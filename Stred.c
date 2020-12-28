@@ -66,10 +66,18 @@ ssize_t stred_read(struct file *pfile, char __user *buffer, size_t length, loff_
 		return 0;
 	}
 	//printk(KERN_INFO "Pre reda\n");
-	if(wait_event_interruptible(readQ, (strlen(stred)>0)))
-	{
-		//printk(KERN_INFO "U redu sam\n");
+	if(down_interruptible(&sem))
 		return -ERESTARTSYS;
+	while(strlen(stred) == 0)
+	{
+		if(wait_event_interruptible(readQ, (strlen(stred)>0)))
+		{
+			up(&sem);
+			if(wait_event_interruptible(readQ,(strlen(stred)>0)))
+				return -ERESTARTSYS;
+			if(down_interruptible(&sem))
+				return -ERESTARTSYS;
+		}
 	}
 	strcpy(buff, stred);
 	//printk(KERN_INFO "Kopirao sam\n");
@@ -96,7 +104,7 @@ ssize_t stred_read(struct file *pfile, char __user *buffer, size_t length, loff_
 //		{
 //			printk(KERN_INFO "Succesfully read\n");
 //			endRead = 1;
-//			wake_up_interruptible(&readQ);
+		
 //		}
 	//else
 	//{
@@ -120,23 +128,34 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 		return -EFAULT;
 	buff[length-1] = '\0';
 	
-	if(wait_event_interruptible(writeQ, (strlen(stred)<100)))
-		return -ERESTARTSYS;
-
 		
-	
-	if(length<107)
+	if(length<110)
         {
 		if(strncmp(buff, "string=", 7)==0)
 		{
+			if(down_interruptible(&sem))
+				return -ERESTARTSYS;
+			while(strlen(buff+7) == 100)
+			{
+				up(&sem);
+				if(wait_event_interruptible(writeQ,(strlen(buff+7)<100)))
+					return -ERESTARTSYS;
+				if(down_interruptible(&sem))
+					return -ERESTARTSYS;
+			}
+
 			strcpy(stred, (buff+7));
 			printk(KERN_WARNING "Succesfully wrote string\n");
+			up(&sem);
+			wake_up_interruptible(&readQ);
 		}
 		else if(strcmp(buff,"clear")==0)
 		{
 			printk(KERN_WARNING "Deleting string\n");
 			for(j=0; j<100; j++)
 				stred[j]=0;
+			up(&sem);
+			wake_up_interruptible(&writeQ);
 		}
 		else if(strcmp(buff, "shrink")==0)
 		{
@@ -149,27 +168,44 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 				j++;
 			}
 			stred[j]='\0';
+			up(&sem);
+			wake_up_interruptible(&writeQ);
+
 		}
 		else if(strncmp(buff, "append=", 7)==0)
 		{
+			if(down_interruptible(&sem))
+				return -ERESTARTSYS;
+			while(strlen(stred) == 100)
+			{
+				up(&sem);
+				if(wait_event_interruptible(writeQ, (strlen(stred)<100)))
+					return -ERESTARTSYS;
+				if(down_interruptible(&sem))
+					return -ERESTARTSYS;
+			}
+
 			j=0;
 			printk(KERN_WARNING "Adding string\n");
 			//while(buff[j]!='\0')
 			//{
-				if((strlen(stred)+strlen(buff+7))>100)
-				printk(KERN_WARNING "Too long string\n");
-				else
-				{
+		//		if((strlen(stred)+strlen(buff+7))>100)
+		//		printk(KERN_WARNING "Too long string\n");
+		//		else
+		//		{
 					strcat(stred, buff+7);
 					printk(KERN_INFO "Successfully concatenated\n");
-				}
+		//		}
+			up(&sem);
+			wake_up_interruptible(&readQ);
+
 			//}
 		}
 		else if(strncmp(buff,"truncate=", 9)==0)
 		{
-			printk(KERN_WARNING "%s", buff);
+			//printk(KERN_WARNING "%s", buff);
 			ret = sscanf(buff+9,"%d",&value);
-			printk(KERN_WARNING "%d %d", ret, value);
+			//printk(KERN_WARNING "%d %d", ret, value);
 			if(ret==1)//one parameter parsed in sscanf
 			{
 				if(value>100 || (strlen(stred)-value)<0)
@@ -186,6 +222,9 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 				printk(KERN_WARNING "Wrong command format\n");
 				
 			}
+			up(&sem);
+			wake_up_interruptible(&writeQ);
+
 
 		}
 		else if(strncmp(buff,"remove=", 7)==0)
@@ -200,13 +239,15 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 		}
 		else
 			printk(KERN_WARNING "Wrong command format\n");
+		up(&sem);
+		wake_up_interruptible(&writeQ);
 
 
 	}
 	else
 		printk(KERN_WARNING "Too long string. The string should not have more than 100 characters");
 
-	wake_up_interruptible(&readQ);
+
 	return length;
 }
 
@@ -218,6 +259,7 @@ static int __init stred_init(void)
 	//Initialize array
 	for (i=0; i<100; i++)
 		stred[i] = 0;
+	sema_init(&sem,1);
 
    ret = alloc_chrdev_region(&my_dev_id, 0, 1, "stred");
    if (ret){
