@@ -176,10 +176,10 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 		{
 			if(down_interruptible(&sem))
 				return -ERESTARTSYS;
-			while(strlen(stred) == 100)
+			while((strlen(stred) + strlen(buff+7)) >= 100)
 			{
 				up(&sem);
-				if(wait_event_interruptible(writeQ, (strlen(stred)<100)))
+				if(wait_event_interruptible(writeQ, ((strlen(stred)+strlen(buff+7))<100)))
 					return -ERESTARTSYS;
 				if(down_interruptible(&sem))
 					return -ERESTARTSYS;
@@ -236,11 +236,14 @@ ssize_t stred_write(struct file *pfile, const char __user *buffer, size_t length
 				strcat(stred, poklapanje+strlen(buff));
 			}
 			printk(KERN_INFO "Successfully removed substring");
+			up(&sem);
+			wake_up_interruptible(&writeQ);
+
 		}
 		else
 			printk(KERN_WARNING "Wrong command format\n");
-		up(&sem);
-		wake_up_interruptible(&writeQ);
+	//	up(&sem);
+	//	wake_up_interruptible(&writeQ);
 
 
 	}
